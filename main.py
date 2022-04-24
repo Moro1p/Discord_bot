@@ -6,7 +6,8 @@ from music_files.music_youtube_download import download_audio
 import os
 import ffmpeg
 
-token = 'OTYwMDY4NDY3NDQ3NDYzOTg3.YklDbw.RqgBrJmDhkkipAnCV4_i-0sQkuw'
+with open('token.txt', encoding='utf-8') as fl:
+    token = fl.readline()
 
 
 class MyClient(discord.Client):
