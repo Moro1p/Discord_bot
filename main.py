@@ -1,11 +1,13 @@
 import asyncio
+import json
 
 import discord
 import random
 from search_weather_yandex import WeatherToday
 from yandex_schdule import ScheduleTransport
 from music_youtube_download import download_audio
-import time
+import requests
+
 
 with open('token.txt', encoding='utf-8') as fl:
     token = fl.readline()
@@ -99,7 +101,7 @@ class MyClient(discord.Client):
                                            ' "погода на сегодня/завтра", "подключись ко мне", "отключись от меня"'
                                            ' "включи <ссылка youtube>", "расписание автобусов/эелектричек",'
                                            ' "объяви собрание", "закончи собрание", "найди/как <запрос>"'
-                                           '"расскажи анекдот", "расскажи факт"')
+                                           '"расскажи анекдот", "расскажи факт" "пришли фото лисы/собаки"')
 
             elif message.content.startswith('Алиса, '):
                 text = message.content.replace('Алиса, ', '')
@@ -279,6 +281,22 @@ class MyClient(discord.Client):
                 elif text == 'расскажи что-нибудь умное' or text == 'расскажи факт' or text == 'поумничай':
                     response = self.random_choose_phrase(self.read_file('phrases/facts.txt'))
                     await message.channel.send(response)
+
+                elif text == 'пришли фото лисы':
+                    response = requests.get('https://some-random-api.ml/img/fox')
+                    json_data = json.loads(response.text)
+
+                    embed = discord.Embed(color=0xff9900, title='Лиса')
+                    embed.set_image(url=json_data['link'])
+                    await message.channel.send(embed=embed)
+
+                elif text == 'пришли фото собаки':
+                    response = requests.get('https://some-random-api.ml/img/Dog')
+                    json_data = json.loads(response.text)
+
+                    embed = discord.Embed(color=0xff9900, title='Собака')
+                    embed.set_image(url=json_data['link'])
+                    await message.channel.send(embed=embed)
 
                 else:
 
