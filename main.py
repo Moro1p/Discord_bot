@@ -31,9 +31,6 @@ class MyClient(discord.Client):
         self.room_activated = False
         self.room_channel = None
 
-    async def on_voice_server_update(self, data):
-        print(data)
-
     async def on_reaction_add(self, reaction, user):
         if reaction.message == self.mes_music_control:
             if user.name != 'Текстовый помощник Алиса':
@@ -101,7 +98,8 @@ class MyClient(discord.Client):
                 await message.channel.send('"привет", "как дела?", "создай канал", "удали канал",'
                                            ' "погода на сегодня/завтра", "подключись ко мне", "отключись от меня"'
                                            ' "включи <ссылка youtube>", "расписание автобусов/эелектричек",'
-                                           ' "объяви собрание", "закончи собрание", "найди/как <запрос>"')
+                                           ' "объяви собрание", "закончи собрание", "найди/как <запрос>"'
+                                           '"расскажи анекдот", "расскажи факт"')
 
             elif message.content.startswith('Алиса, '):
                 text = message.content.replace('Алиса, ', '')
@@ -234,6 +232,8 @@ class MyClient(discord.Client):
                             else:
                                 await message.channel.send('Добавила в очередь')
                                 self.music_queue.append(url)
+                                await self.mes_music_control.edit\
+                                    (content=f'{self.mes_music_control.content[:-1]}{len(self.music_queue)}')
                         else:
                             await message.channel.send(file)
                 elif text.startswith('выключи'):
@@ -276,6 +276,10 @@ class MyClient(discord.Client):
                     joke = self.random_choose_phrase(self.read_file('phrases/jokes.txt'))
                     await message.channel.send(joke)
 
+                elif text == 'расскажи что-нибудь умное' or text == 'расскажи факт' or text == 'поумничай':
+                    response = self.random_choose_phrase(self.read_file('phrases/facts.txt'))
+                    await message.channel.send(response)
+
                 else:
 
                     await message.channel.send('Мне неизвестна эта команда. Напишите'
@@ -296,6 +300,7 @@ class MyClient(discord.Client):
             if self.clicked_next:
                 self.clicked_next = False
                 break
+        await self.mes_music_control.delete()
 
     def read_file(self, filename):
         with open(filename, mode='r', encoding='utf-8') as fl:
