@@ -1,10 +1,11 @@
+import asyncio
+
 import discord
 import random
 from search_weather_yandex import WeatherToday
 from yandex_schdule import ScheduleTransport
-from music_files.music_youtube_download import download_audio
-import os
-import ffmpeg
+from music_youtube_download import download_audio
+import time
 
 with open('token.txt', encoding='utf-8') as fl:
     token = fl.readline()
@@ -20,14 +21,66 @@ class MyClient(discord.Client):
 
         self.connected_voice_channel = None
         self.voice_client = None
+        self.music_queue = []
+        self.message_interface = None
+        self.music_count = 0
+        self.mes_music_control = None
+        self.clicked_next = False
+        self.react_hints_mes_sp = []
 
         self.room_activated = False
         self.room_channel = None
 
-        self.guess_name_started = False
-        self.names = []
-        self.phrases = []
-        self.i = 0
+    async def on_voice_server_update(self, data):
+        print(data)
+
+    async def on_reaction_add(self, reaction, user):
+        if reaction.message == self.mes_music_control:
+            if user.name != 'Текстовый помощник Алиса':
+                if reaction.emoji == '❔':
+                    await reaction.message.remove_reaction('❔', user)
+
+                    self.react_hints_mes_sp.append(await reaction.message.channel.send(f'❔ - для подсказки\n'
+                                                                                       f'❌ - для остановки потока\n'
+                                                                                       f'⏸️ - для паузы\n'
+                                                                                       f'▶️ - для продолжения'
+                                                                                       f' воспроизведения\n'
+                                                                                       f'⏭️ для пропуска трека\n'))
+                elif reaction.emoji == '❌':
+                    if len(self.react_hints_mes_sp) > 0:
+                        for el in self.react_hints_mes_sp:
+                            await el.delete()
+                    if self.voice_client:
+                        if self.voice_client.is_playing():
+                            self.voice_client.stop()
+                        self.music_queue = []
+                        await reaction.message.delete()
+                    self.react_hints_mes_sp = []
+
+                elif reaction.emoji == '⏸️':
+                    await reaction.message.remove_reaction('⏸️', user)
+                    if self.voice_client:
+                        if self.voice_client.is_playing():
+                            self.voice_client.pause()
+                        else:
+                            self.react_hints_mes_sp.append(await reaction.message.channel.
+                                                           send('Уже поставлена на паузу'))
+
+                elif reaction.emoji == '▶️':
+                    await reaction.message.remove_reaction('▶️', user)
+                    if self.voice_client:
+                        if self.voice_client.is_paused():
+                            self.voice_client.resume()
+                        else:
+                            self.react_hints_mes_sp.append(await reaction.message.channel.send('Уже играет'))
+
+                elif reaction.emoji == '⏭️':
+                    await reaction.message.remove_reaction('⏭️', user)
+                    if self.voice_client:
+                        if len(self.music_queue) > 0:
+                            self.voice_client.stop()
+                            self.clicked_next = True
+                            await self.play_audio()
 
     async def on_ready(self):
         print(f'Logged on as {self.user}!')
@@ -44,18 +97,11 @@ class MyClient(discord.Client):
 
     async def on_message(self, message):
         if message.author != 'Текстовый помощник Алиса#1646':
-            if self.guess_name_started:
-                if message.content() == 'Нет' or message.content() == 'Не угадала' or message.content() == 'Неа':
-                    await message.channel.send(f'{random.choice(self.phrases)} {self.names[self.i]}')
-                    self.i += 1
-                else:
-                    await message.channel.send(f'Я так и знала')
-                    self.i = 0
-                    self.guess_name_started = False
-
             if message.content.startswith('Алиса, команды'):
-                await message.channel.send('"привет", "как дела?", "создай канал", "удали канал", "погода на сегодня",'
-                                           ' "расписание автобусов/эелектричек"')
+                await message.channel.send('"привет", "как дела?", "создай канал", "удали канал",'
+                                           ' "погода на сегодня/завтра", "подключись ко мне", "отключись от меня"'
+                                           ' "включи <ссылка youtube>", "расписание автобусов/эелектричек",'
+                                           ' "объяви собрание", "закончи собрание", "найди/как <запрос>"')
 
             elif message.content.startswith('Алиса, '):
                 text = message.content.replace('Алиса, ', '')
@@ -154,32 +200,49 @@ class MyClient(discord.Client):
                             await message.channel.send(f'{ans}')
                         else:
                             await message.channel.send(response)
+
                 elif text.startswith('подключись ко мне'):
+                    found = False
                     for elem in self.voice_channels:
                         if message.author in elem.members:
-                            print(type(elem))
                             self.connected_voice_channel = elem
                             await message.channel.send('Оки')
                             self.voice_client = await elem.connect()
-                        else:
-                            await message.channel.send('А куда?')
+                            found = True
+                    if found is False:
+                        await message.channel.send('А куда?')
+
                 elif text.startswith('включи'):
-                    text = text.replace('включи ', '')
-                    url = text
-                    download_audio(url)
-                    cod = text.split('=')[1]
-                    sp = []
-                    os.chdir('..')
-                    for dirs, dir, files in os.walk('music_files'):
-                        for elem in files:
-                            if '.py' not in str(elem):
-                                sp.append(elem)
-                    for elem in sp:
-                        if cod in elem:
-                            print(elem)
-                            input_audio = ffmpeg.input(f'./music_files/{elem}')
-                            source = discord.FFmpegPCMAudio(f'music_files/{elem}')
-                            self.voice_client.play(input_audio)
+                    if self.voice_client is None:
+                        await message.channel.send('Мне некуда включать музыку')
+                    else:
+                        text = text.replace('включи ', '')
+                        url = text
+                        await message.channel.send('Анализирую ссылку')
+                        result, file, name, duration = download_audio(url)
+                        if result:
+                            if self.voice_client.is_playing() is False:
+                                self.music_queue.append(url)
+                                self.mes_music_control = await message.channel.send(f'Сейчас играет {name}')
+                                await self.mes_music_control.pin()
+                                await self.mes_music_control.add_reaction('❔')
+                                await self.mes_music_control.add_reaction('❌')
+                                await self.mes_music_control.add_reaction('⏸️')
+                                await self.mes_music_control.add_reaction('▶️')
+                                await self.mes_music_control.add_reaction('⏭️')
+                                await self.play_audio()
+                            else:
+                                await message.channel.send('Добавила в очередь')
+                                self.music_queue.append(url)
+                        else:
+                            await message.channel.send(file)
+                elif text.startswith('выключи'):
+                    if self.voice_client is None:
+                        await message.channel.send('А я ничего и не включала')
+                    else:
+                        self.voice_client.stop()
+                        self.music_queue = []
+                        await self.mes_music_control.delete()
 
                 elif text == 'отключись от меня':
                     if self.connected_voice_channel is None:
@@ -193,7 +256,7 @@ class MyClient(discord.Client):
                         self.room_channel = await message.guild.create_voice_channel('Комната сбора')
                         self.voice_channels.append(self.room_channel)
                         await message.channel.send(f'@everyone {message.author} объявил собрание'
-                                                   f'в комнате сбора')
+                                                   f' в комнате сбора')
                     else:
                         await message.channel.send('Уже есть начатое собрание')
 
@@ -209,17 +272,30 @@ class MyClient(discord.Client):
                     else:
                         await message.channel.send('Нет активной комнаты сбора')
 
-                elif text == 'угадай имя':
-                    self.guess_name_started = True
-                    self.names, self.phrases = self.guess_name_game('guess_name.txt', 'guess_start_phrase.txt')
-                    await message.channel.send(f'{random.choice(self.phrases)} {self.names[self.i]}')
-                    self.i += 1
+                elif text == 'расскажи анекдот' or text == 'расскажи шутку' or text == 'пошути':
+                    joke = self.random_choose_phrase(self.read_file('phrases/jokes.txt'))
+                    await message.channel.send(joke)
 
                 else:
 
                     await message.channel.send('Мне неизвестна эта команда. Напишите'
                                                ' "Алиса, команды" чтобы узнать больше'
                                                'о моих способностях')
+
+    async def play_audio(self):
+        ffmpeg_options = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                          'options': '-vn'}
+        while len(self.music_queue) > 0:
+            if self.voice_client.is_playing() is False:
+                audio = download_audio(self.music_queue.pop(0))
+                await self.mes_music_control.edit(content=f'Сейчас играет {audio[2]}\n'
+                                                          f'Треков в очереди: {len(self.music_queue)}')
+                self.voice_client.play(discord.FFmpegPCMAudio(
+                    source=audio[1], **ffmpeg_options))
+                await asyncio.sleep(audio[3])
+            if self.clicked_next:
+                self.clicked_next = False
+                break
 
     def read_file(self, filename):
         with open(filename, mode='r', encoding='utf-8') as fl:
@@ -229,16 +305,6 @@ class MyClient(discord.Client):
     def random_choose_phrase(self, sp):
         phrase = random.choice(sp)
         return phrase
-
-    def guess_name_game(self, names_file, start_phrases_file):
-        with open(names_file, encoding='utf-8') as nfl:
-            names_sp = nfl.readlines()
-        nfl.close()
-        random.shuffle(names_sp)
-        with open(start_phrases_file, encoding='utf-8') as spfl:
-            phrases_sp = spfl.readlines()
-        spfl.close()
-        return names_sp, phrases_sp
 
 
 client = MyClient()
