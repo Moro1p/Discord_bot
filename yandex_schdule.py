@@ -121,14 +121,3 @@ class ScheduleTransport():
                 return False, f'мне неизвестен город/станция {A}'
             elif B_code is None:
                 return False, f'мне неизвестен город/станция {B}'
-
-
-
-
-
-
-    def all_stations_kras(self):
-        params = {
-            'apikey': '69878fa3-e234-46ad-99bd-31518986ee00',
-
-        }
